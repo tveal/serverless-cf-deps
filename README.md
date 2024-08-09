@@ -107,6 +107,30 @@ In this case, a stackName, "custom" would be collected by `cf-deps`, but this
 isn't realistic. Instead, you can add "custom" as an excludes. See
 `cf-deps help`.
 
+Alternatively, you could do some processing before `cf-deps` to
+1. Escape `${cf` lookups
+2. Serverless print evaluated config
+3. Unescape `${cf` lookups
+4. (Optional) remove defaults from `${cf..., default}`
+5. Run `cf-deps`
+
+Example
+```bash
+# 1. escape cf lookups
+sed -i "s/\${cf/cfn{cf/g" $(git grep -l "\${cf")
+# 2. serverless print evaluated config
+npx sls print -s my-stage -r my-region 2>/dev/null > sls-config.yml
+# 3. unescape cf lookups
+sed -i "s/cfn{cf/\${cf/g" sls-config.yml $(git grep -l "cfn{cf")
+# 4. remove defaults from cf lookups
+grep -o '\${.*,.*}' sls-config.yml | sed 's/,.*}/}/g' >> sls-config.yml
+
+# 5. run cf-deps
+export CF_DEPS_FILENAME_PTN="sls-config.yml"
+cf-deps
+```
+
+
 # cf-groups
 
 - Clones the latest commit on the repo branch specified; should be the storage
