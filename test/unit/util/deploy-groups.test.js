@@ -10,12 +10,14 @@ const DEPLOY_DATA_SINGLE_DEP = {
     '0': {
       id: 0,
       isTracked: false,
+      isIgnored: false,
       name: 'cfn-global-infra-stage1',
       parents: [],
     },
     '1': {
       id: 1,
       isTracked: true,
+      isIgnored: false,
       name: 'cfn-stack-stage1',
       parents: [0],
     },
@@ -25,11 +27,18 @@ const DEPLOY_DATA_SINGLE_DEP = {
   groupDeps: [
     {
       group: 1,
-      ids: ['0', '1'],
+      ids: ['0'],
+      uniqDeps: [],
+      conflicts: [],
+    },
+    {
+      group: 2,
+      ids: ['1'],
       uniqDeps: ['0'],
-      conflicts: ['0'],
+      conflicts: [],
     },
   ],
+  cycles: [],
   missedIds: [],
   stacksToDeploy: [],
   stacksToIgnore: [],
@@ -47,6 +56,7 @@ describe('util/deploy-groups', () => {
         exclusive: false,
         excludedIds: [],
         groupDeps: [],
+        cycles: [],
         missedIds: [],
         stacksToDeploy: [],
         stacksToIgnore: [],
@@ -82,6 +92,7 @@ describe('util/deploy-groups', () => {
             name: stack1,
             parents: [],
             isTracked: true,
+            isIgnored: false,
           },
         },
         groupDeps: [
@@ -103,6 +114,13 @@ describe('util/deploy-groups', () => {
       const deployData = createDeployGroups({ [stack1]: [stack2] }, undefined, undefined, [stack2]);
       expect(deployData).toEqual({
         ...DEPLOY_DATA_SINGLE_DEP,
+        directory: {
+          ...DEPLOY_DATA_SINGLE_DEP.directory,
+          '0': {
+            ...DEPLOY_DATA_SINGLE_DEP.directory['0'],
+            isIgnored: true,
+          },
+        },
         groupDeps: [
           {
             group: 1,
@@ -113,6 +131,7 @@ describe('util/deploy-groups', () => {
         ],
         excludedIds: ['0'],
         stacksToIgnore: [stack2],
+        totalUntracked: 0,
       });
     });
     it('should handle single dependency with stacksToIgnore on all dependencies', () => {
@@ -121,9 +140,21 @@ describe('util/deploy-groups', () => {
       const deployData = createDeployGroups({ [stack1]: [stack2] }, undefined, undefined, [stack1, stack2]);
       expect(deployData).toEqual({
         ...DEPLOY_DATA_SINGLE_DEP,
+        directory: {
+          ...DEPLOY_DATA_SINGLE_DEP.directory,
+          '0': {
+            ...DEPLOY_DATA_SINGLE_DEP.directory['0'],
+            isIgnored: true,
+          },
+          '1': {
+            ...DEPLOY_DATA_SINGLE_DEP.directory['1'],
+            isIgnored: true,
+          },
+        },
         groupDeps: [],
         excludedIds: ['0', '1'],
         stacksToIgnore: [stack1, stack2],
+        totalUntracked: 0,
       });
     });
     it('should handle direct circular dependency', () => {
@@ -135,6 +166,7 @@ describe('util/deploy-groups', () => {
           '0': {
             id: 0,
             isTracked: true,
+            isIgnored: false,
             name: stack1,
             parents: [0],
           },
@@ -167,33 +199,134 @@ describe('util/deploy-groups', () => {
           '0': {
             id: 0,
             isTracked: true,
+            isIgnored: false,
             name: stack1,
             parents: [1],
           },
           '1': {
             id: 1,
             isTracked: true,
+            isIgnored: false,
             name: stack2,
             parents: [2],
           },
           '2': {
             id: 2,
             isTracked: true,
+            isIgnored: false,
             name: stack3,
             parents: [0],
+          },
+        },
+        groupDeps: [],
+        cycles: ['0→1→2→0'],
+        missedIds: ['0', '1', '2'],
+        total: 3,
+        totalUntracked: 0,
+      });
+    });
+    it('should combine dependency groups with no shared unique dependency IDs', () => {
+      const stack1 = 'cfn-stack1-stage1';
+      const stack2 = 'cfn-stack2-stage1';
+      const stack3 = 'cfn-stack3-stage1';
+      const stack4 = 'cfn-stack4-stage1';
+      const stack5 = 'cfn-stack5-stage1';
+      const stack6 = 'cfn-stack6-stage1';
+      const stack7 = 'cfn-stack7-stage1';
+      const deployData = createDeployGroups({
+        [stack1]: [stack4, stack5, stack6],
+        [stack2]: [stack5, stack6],
+        [stack3]: [stack6],
+        [stack4]: [stack7],
+      });
+
+      expect(deployData).toEqual({
+        ...DEPLOY_DATA_SINGLE_DEP,
+        directory: {
+          '→': {
+            paths: [
+              '0→3→6',
+              '0→4',
+              '0→5',
+              '1→4',
+              '1→5',
+              '2→5',
+              '3→6',
+            ],
+          },
+          '0': {
+            id: 0,
+            isTracked: true,
+            isIgnored: false,
+            name: stack1,
+            parents: [3, 4, 5],
+          },
+          '1': {
+            id: 1,
+            isTracked: true,
+            isIgnored: false,
+            name: stack2,
+            parents: [4, 5],
+          },
+          '2': {
+            id: 2,
+            isTracked: true,
+            isIgnored: false,
+            name: stack3,
+            parents: [5],
+          },
+          '3': {
+            id: 3,
+            isTracked: true,
+            isIgnored: false,
+            name: stack4,
+            parents: [6],
+          },
+          '4': {
+            id: 4,
+            isTracked: false,
+            isIgnored: false,
+            name: stack5,
+            parents: [],
+          },
+          '5': {
+            id: 5,
+            isTracked: false,
+            isIgnored: false,
+            name: stack6,
+            parents: [],
+          },
+          '6': {
+            id: 6,
+            isTracked: false,
+            isIgnored: false,
+            name: stack7,
+            parents: [],
           },
         },
         groupDeps: [
           {
             group: 1,
+            ids: ['6'],
+            uniqDeps: [],
+            conflicts: [],
+          },
+          {
+            group: 2,
+            ids: ['3', '4', '5'],
+            uniqDeps: ['6'],
+            conflicts: [],
+          },
+          {
+            group: 3,
             ids: ['0', '1', '2'],
-            uniqDeps: ['0', '1'],
-            conflicts: ['0', '1'],
+            uniqDeps: ['3', '4', '5', '6'],
+            conflicts: [],
           },
         ],
         missedIds: [],
-        total: 3,
-        totalUntracked: 0,
+        total: 7,
+        totalUntracked: 3,
       });
     });
   });
@@ -202,10 +335,15 @@ describe('util/deploy-groups', () => {
       const stack1 = 'cfn-stack1-stage1';
       const stack2 = 'cfn-stack2-stage1';
       const stack3 = 'cfn-stack3-stage1';
+      const stack4 = 'cfn-stack4-stage1';
+      const stack5 = 'cfn-stack5-stage1';
+      const stack6 = 'cfn-stack6-stage1';
       const deployData = createDeployGroups({
         [stack1]: [stack2],
         [stack2]: [stack3],
         [stack3]: [stack1],
+        [stack4]: [stack5],
+        [stack6]: [],
       });
 
       expect(createDeployReport(deployData).split('\n')).toEqual([
@@ -213,9 +351,9 @@ describe('util/deploy-groups', () => {
         '===',
         '',
         'Stack Counts:',
-        '  - Total: 3',
-        '  - Missed: 0',
-        '  - Untracked: 0',
+        '  - Total: 6',
+        '  - Missed: 3',
+        '  - Untracked: 1',
         '  - Excluded: 0',
         '',
         'Inputs',
@@ -225,15 +363,27 @@ describe('util/deploy-groups', () => {
         '',
         'Stack IDs are relative to the dependencies directory (this report)',
         '',
+        'WARNING: There are 1 cyclic paths',
+        '  - 0→1→2→0',
         '',
-        'Group 1 -- CONFLICT IDs: [0,1]',
+        'Missed Stacks:',
+        '  - (id: 0, MISSED) cfn-stack1-stage1',
+        '  - (id: 1, MISSED) cfn-stack2-stage1',
+        '  - (id: 2, MISSED) cfn-stack3-stage1',
+        '',
+        'Group 1',
         '---',
         '',
-        '3 stacks (dep IDs: [0,1])',
-        '  - (id: 0) cfn-stack1-stage1',
-        '  - (id: 1) cfn-stack2-stage1',
-        '  - (id: 2) cfn-stack3-stage1',
-        ''
+        '2 stacks',
+        '  - (id: 4, UNTRACKED) cfn-stack5-stage1',
+        '  - (id: 5) cfn-stack6-stage1',
+        '',
+        'Group 2',
+        '---',
+        '',
+        '1 stacks (dep IDs: [4])',
+        '  - (id: 3) cfn-stack4-stage1',
+        '',
       ]);
     });
     it('should create report with provided stacks to deploy', () => {
@@ -245,7 +395,6 @@ describe('util/deploy-groups', () => {
         [stack2]: [stack3],
       }, [stack1, stack2]);
 
-      // console.log(JSON.stringify(createDeployReport(deployData).split('\n'), null, 2));
       expect(createDeployReport(deployData).split('\n')).toEqual([
         'Deploy Groups based on Serverless CloudFormation Stack Dependencies',
         '===',
@@ -265,14 +414,19 @@ describe('util/deploy-groups', () => {
         'Stack IDs are relative to the dependencies directory (this report)',
         '',
         '',
-        'Group 1 -- CONFLICT IDs: [2]',
+        'Group 1',
         '---',
         '',
-        '2 stacks (dep IDs: [2])',
-        '  - (id: 1) cfn-stack2-stage1',
+        '1 stacks',
         '  - (id: 2, UNTRACKED) cfn-stack3-stage1',
         '',
         'Group 2',
+        '---',
+        '',
+        '1 stacks (dep IDs: [2])',
+        '  - (id: 1) cfn-stack2-stage1',
+        '',
+        'Group 3',
         '---',
         '',
         '1 stacks (dep IDs: [1,2])',
@@ -289,7 +443,6 @@ describe('util/deploy-groups', () => {
         [stack2]: [stack3],
       }, [stack1, stack2], true);
 
-      // console.log(JSON.stringify(createDeployReport(deployData).split('\n'), null, 2));
       expect(createDeployReport(deployData).split('\n')).toEqual([
         'Deploy Groups based on Serverless CloudFormation Stack Dependencies',
         '===',
@@ -309,51 +462,17 @@ describe('util/deploy-groups', () => {
         'Stack IDs are relative to the dependencies directory (this report)',
         '',
         '',
-        'Group 1 -- CONFLICT IDs: [1]',
+        'Group 1',
         '---',
         '',
-        '2 stacks (dep IDs: [1])',
-        '  - (id: 0) cfn-stack1-stage1',
+        '1 stacks',
         '  - (id: 1) cfn-stack2-stage1',
-        ''
-      ]);
-    });
-    it('should create report with missed stacks', () => {
-      const stack1 = 'cfn-stack1-stage1';
-      const stack2 = 'cfn-stack2-stage1';
-      const stack3 = 'cfn-stack3-stage1';
-      const deployData = createDeployGroups({
-        [stack1]: [stack3],
-        [stack2]: [],
-      });
-
-      // console.log(JSON.stringify(createDeployReport(deployData).split('\n'), null, 2));
-      expect(createDeployReport(deployData).split('\n')).toEqual([
-        'Deploy Groups based on Serverless CloudFormation Stack Dependencies',
-        '===',
         '',
-        'Stack Counts:',
-        '  - Total: 3',
-        '  - Missed: 1',
-        '  - Untracked: 1',
-        '  - Excluded: 0',
-        '',
-        'Inputs',
-        '  - Exclusive: false',
-        '  - Stacks to deploy',
-        '      - all',
-        '',
-        'Stack IDs are relative to the dependencies directory (this report)',
-        '',
-        'Missed Stacks:',
-        '  - (id: 1, MISSED) cfn-stack2-stage1',
-        '',
-        'Group 1 -- CONFLICT IDs: [2]',
+        'Group 2',
         '---',
         '',
-        '2 stacks (dep IDs: [2])',
+        '1 stacks (dep IDs: [1])',
         '  - (id: 0) cfn-stack1-stage1',
-        '  - (id: 2, UNTRACKED) cfn-stack3-stage1',
         ''
       ]);
     });
@@ -366,15 +485,14 @@ describe('util/deploy-groups', () => {
         [stack2]: [],
       }, undefined, false, [stack3]);
 
-      // console.log(JSON.stringify(createDeployReport(deployData).split('\n'), null, 2));
       expect(createDeployReport(deployData).split('\n')).toEqual([
         'Deploy Groups based on Serverless CloudFormation Stack Dependencies',
         '===',
         '',
         'Stack Counts:',
         '  - Total: 3',
-        '  - Missed: 1',
-        '  - Untracked: 1',
+        '  - Missed: 0',
+        '  - Untracked: 0',
         '  - Excluded: 1',
         '',
         'Inputs',
@@ -386,14 +504,13 @@ describe('util/deploy-groups', () => {
         '',
         'Stack IDs are relative to the dependencies directory (this report)',
         '',
-        'Missed Stacks:',
-        '  - (id: 1, MISSED) cfn-stack2-stage1',
         '',
         'Group 1',
         '---',
         '',
-        '1 stacks',
+        '2 stacks',
         '  - (id: 0) cfn-stack1-stage1',
+        '  - (id: 1) cfn-stack2-stage1',
         ''
       ]);
     });
